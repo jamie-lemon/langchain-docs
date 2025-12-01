@@ -943,6 +943,7 @@
                         "langsmith/trace-with-instructor",
                         "langsmith/trace-with-openai-agents-sdk",
                         "langsmith/trace-with-opentelemetry",
+                        "langsmith/trace-with-pydantic-ai",
                         "langsmith/trace-with-semantic-kernel",
                         "langsmith/trace-with-vercel-ai-sdk"
                       ]
@@ -1077,6 +1078,7 @@
                     {
                       "group": "Evaluation types",
                       "pages": [
+                        "langsmith/evaluation-types",
                         "langsmith/code-evaluator",
                         "langsmith/llm-as-judge",
                         "langsmith/composite-evaluators",
@@ -1096,6 +1098,7 @@
                     {
                       "group": "Evaluation techniques",
                       "pages": [
+                        "langsmith/experiment-configuration",
                         "langsmith/define-target-function",
                         "langsmith/evaluate-on-intermediate-steps",
                         "langsmith/multiple-scores",
