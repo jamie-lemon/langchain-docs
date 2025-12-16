@@ -37,10 +37,6 @@ Install the Prediction Guard LangChain integration with
 pip install -qU langchain-predictionguard
 ```
 
-```output
-Note: you may need to restart the kernel to use updated packages.
-```
-
 ## Instantiation
 
 ```python
@@ -134,7 +130,7 @@ AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'chatcmpl-tool-b1
 
 ### AIMessage.tool_calls
 
-Notice that the AIMessage has a tool_calls attribute. This contains in a standardized ToolCall format that is model-provider agnostic.
+Notice that the AIMessage has a @[`tool_calls`][AIMessage.tool_calls] attribute. This contains in a standardized `ToolCall` format that is model-provider agnostic.
 
 ```python
 ai_msg.tool_calls

@@ -49,7 +49,7 @@ if not os.getenv("CLOVASTUDIO_API_KEY"):
     )
 ```
 
-To enable automated tracing of your model calls, set your [LangSmith](https://docs.smith.langchain.com/) API key:
+To enable automated tracing of your model calls, set your [LangSmith](https://docs.langchain.com/langsmith/home) API key:
 
 ```python
 os.environ["LANGSMITH_TRACING"] = "true"
@@ -185,7 +185,7 @@ AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_EOh69hbtl8p
 
 ### AIMessage.tool_calls
 
-Notice that the AIMessage has a `tool_calls` attribute. This contains in a standardized ToolCall format that is model-provider agnostic.
+Notice that the `AIMessage` has a @[`tool_calls`][AIMessage.tool_calls] attribute. This contains in a standardized `ToolCall` format that is model-provider agnostic.
 
 ```python
 ai_msg.tool_calls

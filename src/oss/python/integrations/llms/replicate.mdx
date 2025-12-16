@@ -54,7 +54,7 @@ os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
 ```
 
 ```python
-from langchain.chains import LLMChain
+from langchain_classic.chains import LLMChain
 from langchain_community.llms import Replicate
 from langchain_core.prompts import PromptTemplate
 ```
@@ -133,13 +133,6 @@ The model spits out a URL. Let's render it.
 
 ```python
 !poetry run pip install Pillow
-```
-
-```output
-Requirement already satisfied: Pillow in /Users/bagatur/langchain/.venv/lib/python3.9/site-packages (9.5.0)
-
-[notice] A new release of pip is available: 23.2 -> 23.2.1
-[notice] To update, run: pip install -U pip
 ```
 
 ```python
@@ -232,7 +225,7 @@ Stopped output runtime: 25.77039254200008 seconds
 The whole point of langchain is to... chain! Here's an example of how do that.
 
 ```python
-from langchain.chains import SimpleSequentialChain
+from langchain_classic.chains import SimpleSequentialChain
 ```
 
 First, let's define the LLM for this model as a flan-5, and text2image as a stable diffusion model.

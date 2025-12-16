@@ -14,10 +14,6 @@ This installs the [Python SDK](https://docs.aperturedata.io/category/aperturedb-
 pip install -qU aperturedb
 ```
 
-```output
-Note: you may need to restart the kernel to use updated packages.
-```
-
 ## Run an ApertureDB instance
 
 To continue, you should have an [ApertureDB instance up and running](https://docs.aperturedata.io/HowToGuides/start/Setup) and configure your environment to use it.
@@ -119,7 +115,7 @@ Question: {input}""")
 
 
 # Create a chain that passes documents to an LLM
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 
 document_chain = create_stuff_documents_chain(llm, prompt)
 
@@ -129,7 +125,7 @@ retriever = vector_db.as_retriever()
 
 
 # Create a RAG chain that connects the retriever to the LLM
-from langchain.chains import create_retrieval_chain
+from langchain_classic.chains import create_retrieval_chain
 
 retrieval_chain = create_retrieval_chain(retriever, document_chain)
 ```
