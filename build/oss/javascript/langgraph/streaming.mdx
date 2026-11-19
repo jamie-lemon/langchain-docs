@@ -2,45 +2,22 @@
 title: Streaming
 ---
 
+import NostreamTagPy from '/snippets/javascript/code-samples/nostream-tag-py.mdx';
+import NostreamTagJs from '/snippets/javascript/code-samples/nostream-tag-js.mdx';
 
+<Tip>
+For new applications, we recommend [event streaming](/oss/javascript/langgraph/event-streaming)—the typed-projection API introduced in LangGraph v1.2. Event streaming gives you separate iterators per projection (messages, values, subgraphs, output) so you can consume them independently instead of branching on `stream_mode` chunks.
+</Tip>
 
-LangGraph implements a streaming system to surface real-time updates. Streaming is crucial for enhancing the responsiveness of applications built on LLMs. By displaying output progressively, even before a complete response is ready, streaming significantly improves user experience (UX), particularly when dealing with the latency of LLMs.
+This page covers LangGraph's stream-mode API. It exposes graph execution through stream modes such as `updates`, `values`, `messages`, `custom`, `checkpoints`, `tasks`, and `debug`. Use it when you need direct access to graph-runtime events or specific stream-mode output.
 
-What's possible with LangGraph streaming:
+## Get started
 
-* <Icon icon="share" size={16} /> [**Stream graph state**](#stream-graph-state) — get state updates / values with `updates` and `values` modes.
-* <Icon icon="chart-bar" size={16} /> [**Stream subgraph outputs**](#stream-subgraph-outputs) — include outputs from both the parent graph and any nested subgraphs.
-* <Icon icon="binary" size={16} /> [**Stream LLM tokens**](#messages) — capture token streams from anywhere: inside nodes, subgraphs, or tools.
-* <Icon icon="table" size={16} /> [**Stream custom data**](#stream-custom-data) — send custom updates or progress signals directly from tool functions.
-* <Icon icon="tool" size={16} /> [**Stream tool progress**](#stream-tool-progress) — track tool lifecycle events (`start`, `progress`, `end`, `error`) in real time.
-* <Icon icon="stack-push" size={16} /> [**Use multiple streaming modes**](#stream-multiple-modes) — choose from `values` (full state), `updates` (state deltas), `messages` (LLM tokens + metadata), `custom` (arbitrary user data), `tools` (tool lifecycle events), or `debug` (detailed traces).
-
-
-
-## Supported stream modes
+### Basic usage
 
 
 
-Pass one or more of the following stream modes as a list to the [`stream`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.CompiledStateGraph.html#stream) method:
-
-
-| Mode | Description |
-| ---- | ----------- |
-| `values` | Streams the full value of the state after each step of the graph. |
-| `updates` | Streams the updates to the state after each step of the graph. If multiple updates are made in the same step (e.g., multiple nodes are run), those updates are streamed separately. |
-| `custom` | Streams custom data from inside your graph nodes. |
-| `messages` | Streams 2-tuples (LLM token, metadata) from any graph nodes where an LLM is invoked. |
-| `tools` | Streams tool-call lifecycle events (`on_tool_start`, `on_tool_event`, `on_tool_end`, `on_tool_error`) from tool execution. |
-| `debug` | Streams as much information as possible throughout the execution of the graph. |
-
-
-
-
-## Basic usage example
-
-
-
-LangGraph graphs expose the [`stream`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.pregel.Pregel.html#stream) method to yield streamed outputs as iterators.
+LangGraph graphs expose the [`stream`](https://reference.langchain.com/javascript/langchain-langgraph/pregel/Pregel/stream) method to yield streamed outputs as iterators.
 
 ```typescript
 for await (const chunk of await graph.stream(inputs, {
@@ -51,65 +28,31 @@ for await (const chunk of await graph.stream(inputs, {
 ```
 
 
-<Accordion title="Extended example: streaming updates">
-
-
-  ```typescript
-  import { StateGraph, StateSchema, START, END } from "@langchain/langgraph";
-  import { z } from "zod/v4";
-
-  const State = new StateSchema({
-    topic: z.string(),
-    joke: z.string(),
-  });
-
-  const graph = new StateGraph(State)
-    .addNode("refineTopic", (state) => {
-      return { topic: state.topic + " and cats" };
-    })
-    .addNode("generateJoke", (state) => {
-      return { joke: `This is a joke about ${state.topic}` };
-    })
-    .addEdge(START, "refineTopic")
-    .addEdge("refineTopic", "generateJoke")
-    .addEdge("generateJoke", END)
-    .compile();
-
-  for await (const chunk of await graph.stream(
-    { topic: "ice cream" },
-    // Set streamMode: "updates" to stream only the updates to the graph state after each node
-    // Other stream modes are also available. See supported stream modes for details
-    { streamMode: "updates" }
-  )) {
-    console.log(chunk);
-  }
-  ```
-
-
-  ```python
-  {'refineTopic': {'topic': 'ice cream and cats'}}
-  {'generateJoke': {'joke': 'This is a joke about ice cream and cats'}}
-  ```
-</Accordion>
-
-## Stream multiple modes
+<Tip>
+Debug streaming events, inspect token-by-token LLM output, and monitor latency with [LangSmith](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=oss-langgraph-streaming). Follow the [tracing quickstart](/langsmith/trace-with-langgraph) to get set up.
+</Tip>
 
 
 
-You can pass an array as the `streamMode` parameter to stream multiple modes at once.
-
-The streamed outputs will be tuples of `[mode, chunk]` where `mode` is the name of the stream mode and `chunk` is the data streamed by that mode.
-
-```typescript
-for await (const [mode, chunk] of await graph.stream(inputs, {
-  streamMode: ["updates", "custom"],
-})) {
-  console.log(chunk);
-}
-```
+## Stream modes
 
 
-## Stream graph state
+
+Pass one or more of the following stream modes as a list to the [`stream`](https://reference.langchain.com/javascript/langchain-langgraph/index/CompiledStateGraph/stream) method:
+
+| Mode | Description |
+| :--- | :---------- |
+| [values](#graph-state) | Full state after each step. |
+| [updates](#graph-state) | State updates after each step. Multiple updates in the same step are streamed separately. |
+| [messages](#llm-tokens) | 2-tuples of (LLM token, metadata) from LLM calls. |
+| [custom](#custom-data) | Custom data emitted from nodes via the `writer` config parameter. |
+| [tools](#tool-progress) | Tool-call lifecycle events (`on_tool_start`, `on_tool_event`, `on_tool_end`, `on_tool_error`). |
+| [debug](#debug) | All available info throughout graph execution. |
+
+
+<a id="messages"></a>
+
+### Graph state
 
 Use the stream modes `updates` and `values` to stream the state of the graph as it executes.
 
@@ -152,7 +95,9 @@ const graph = new StateGraph(State)
       { topic: "ice cream" },
       { streamMode: "updates" }
     )) {
-      console.log(chunk);
+      for (const [nodeName, state] of Object.entries(chunk)) {
+        console.log(`Node ${nodeName} updated:`, state);
+      }
     }
     ```
 
@@ -167,124 +112,20 @@ const graph = new StateGraph(State)
       { topic: "ice cream" },
       { streamMode: "values" }
     )) {
-      console.log(chunk);
+      console.log(`topic: ${chunk.topic}, joke: ${chunk.joke}`);
     }
     ```
 
     </Tab>
 </Tabs>
 
-## Stream subgraph outputs
-
-
-
-To include outputs from [subgraphs](/oss/javascript/langgraph/use-subgraphs) in the streamed outputs, you can set `subgraphs: true` in the `.stream()` method of the parent graph. This will stream outputs from both the parent graph and any subgraphs.
-
-The outputs will be streamed as tuples `[namespace, data]`, where `namespace` is a tuple with the path to the node where a subgraph is invoked, e.g. `["parent_node:<task_id>", "child_node:<task_id>"]`.
-
-```typescript
-for await (const chunk of await graph.stream(
-  { foo: "foo" },
-  {
-    // Set subgraphs: true to stream outputs from subgraphs
-    subgraphs: true,
-    streamMode: "updates",
-  }
-)) {
-  console.log(chunk);
-}
-```
-
-
-<Accordion title="Extended example: streaming from subgraphs">
-
-
-  ```typescript
-  import { StateGraph, StateSchema, START } from "@langchain/langgraph";
-  import { z } from "zod/v4";
-
-  // Define subgraph
-  const SubgraphState = new StateSchema({
-    foo: z.string(), // note that this key is shared with the parent graph state
-    bar: z.string(),
-  });
-
-  const subgraphBuilder = new StateGraph(SubgraphState)
-    .addNode("subgraphNode1", (state) => {
-      return { bar: "bar" };
-    })
-    .addNode("subgraphNode2", (state) => {
-      return { foo: state.foo + state.bar };
-    })
-    .addEdge(START, "subgraphNode1")
-    .addEdge("subgraphNode1", "subgraphNode2");
-  const subgraph = subgraphBuilder.compile();
-
-  // Define parent graph
-  const ParentState = new StateSchema({
-    foo: z.string(),
-  });
-
-  const builder = new StateGraph(ParentState)
-    .addNode("node1", (state) => {
-      return { foo: "hi! " + state.foo };
-    })
-    .addNode("node2", subgraph)
-    .addEdge(START, "node1")
-    .addEdge("node1", "node2");
-  const graph = builder.compile();
-
-  for await (const chunk of await graph.stream(
-    { foo: "foo" },
-    {
-      streamMode: "updates",
-      // Set subgraphs: true to stream outputs from subgraphs
-      subgraphs: true,
-    }
-  )) {
-    console.log(chunk);
-  }
-  ```
-
-
-
-
-  ```
-  [[], {'node1': {'foo': 'hi! foo'}}]
-  [['node2:dfddc4ba-c3c5-6887-5012-a243b5b377c2'], {'subgraphNode1': {'bar': 'bar'}}]
-  [['node2:dfddc4ba-c3c5-6887-5012-a243b5b377c2'], {'subgraphNode2': {'foo': 'hi! foobar'}}]
-  [[], {'node2': {'foo': 'hi! foobar'}}]
-  ```
-
-
-  **Note** that we are receiving not just the node updates, but we also the namespaces which tell us what graph (or subgraph) we are streaming from.
-</Accordion>
-
-<a id="debug"></a>
-### Debugging
-
-Use the `debug` streaming mode to stream as much information as possible throughout the execution of the graph. The streamed outputs include the name of the node as well as the full state.
-
-
-
-```typescript
-for await (const chunk of await graph.stream(
-  { topic: "ice cream" },
-  { streamMode: "debug" }
-)) {
-  console.log(chunk);
-}
-```
-
-
-<a id="messages"></a>
-## LLM tokens
+### LLM tokens
 
 Use the `messages` streaming mode to stream Large Language Model (LLM) outputs **token by token** from any part of your graph, including nodes, tools, subgraphs, or tasks.
 
 
 
-The streamed output from [`messages` mode](#supported-stream-modes) is a tuple `[message_chunk, metadata]` where:
+The streamed output from [`messages` mode](#stream-modes) is a tuple `[message_chunk, metadata]` where:
 
 * `message_chunk`: the token or message segment from the LLM.
 * `metadata`: a dictionary containing details about the graph node and LLM invocation.
@@ -301,7 +142,7 @@ const MyState = new StateSchema({
   joke: z.string().default(""),
 });
 
-const model = new ChatOpenAI({ model: "gpt-4.1-mini" });
+const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
 
 const callModel: GraphNode<typeof MyState> = async (state) => {
   // Call the LLM to generate a joke about a topic
@@ -342,12 +183,12 @@ import { ChatOpenAI } from "@langchain/openai";
 
 // model1 is tagged with "joke"
 const model1 = new ChatOpenAI({
-  model: "gpt-4.1-mini",
+  model: "gpt-5.4-mini",
   tags: ['joke']
 });
 // model2 is tagged with "poem"
 const model2 = new ChatOpenAI({
-  model: "gpt-4.1-mini",
+  model: "gpt-5.4-mini",
   tags: ['poem']
 });
 
@@ -378,12 +219,12 @@ for await (const [msg, metadata] of await graph.stream(
 
   // The jokeModel is tagged with "joke"
   const jokeModel = new ChatOpenAI({
-    model: "gpt-4.1-mini",
+    model: "gpt-5.4-mini",
     tags: ["joke"]
   });
   // The poemModel is tagged with "poem"
   const poemModel = new ChatOpenAI({
-    model: "gpt-4.1-mini",
+    model: "gpt-5.4-mini",
     tags: ["poem"]
   });
 
@@ -433,6 +274,21 @@ for await (const [msg, metadata] of await graph.stream(
 
 </Accordion>
 
+#### Omit messages from the stream
+
+Use the `nostream` tag to exclude LLM output from the stream entirely. Invocations tagged with `nostream` still run and produce output; their tokens are simply not emitted in `messages` mode.
+
+This is useful when:
+
+- You need LLM output for internal processing (for example structured output) but do not want to stream it to the client
+- You stream the same content through a different channel (for example custom UI messages) and want to avoid duplicate output in the `messages` stream
+
+
+
+<NostreamTagJs />
+
+
+
 #### Filter by node
 
 To stream tokens only from specific nodes, use `stream_mode="messages"` and filter the outputs by the `langgraph_node` field in the streamed metadata:
@@ -464,7 +320,7 @@ for await (const [msg, metadata] of await graph.stream(
   import { StateGraph, StateSchema, GraphNode, START } from "@langchain/langgraph";
   import * as z from "zod";
 
-  const model = new ChatOpenAI({ model: "gpt-4.1-mini" });
+  const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
 
   const State = new StateSchema({
     topic: z.string(),
@@ -513,7 +369,7 @@ for await (const [msg, metadata] of await graph.stream(
 
 </Accordion>
 
-## Stream custom data
+### Custom data
 
 
 
@@ -587,7 +443,7 @@ To send **custom user-defined data** from inside a LangGraph node or tool, follo
 </Tabs>
 
 
-## Stream tool progress
+### Tool progress
 
 Use the `tools` stream mode to receive real-time lifecycle events for tool executions. This is useful for showing progress indicators, partial results, and error states in your UI while tools are running.
 
@@ -600,7 +456,7 @@ The `tools` stream mode emits four event types:
 | `on_tool_end` | Tool returns its final result | `name`, `output`, `toolCallId` |
 | `on_tool_error` | Tool throws an error | `name`, `error`, `toolCallId` |
 
-### Define tools that stream progress
+#### Define tools that stream progress
 
 To emit `on_tool_event` events, define your tool function as an **async generator** (`async function*`). Each `yield` sends intermediate data to the stream, and the `return` value is used as the tool's final result.
 
@@ -648,7 +504,7 @@ const searchFlights = tool(
 Existing tools that return a `Promise` are fully compatible. They emit `on_tool_start` and `on_tool_end` events but no `on_tool_event` events.
 </Note>
 
-### Consume tool events server-side
+#### Consume tool events server-side
 
 Pass `streamMode: ["tools"]` (or combine with other modes) to `graph.stream()`:
 
@@ -676,9 +532,9 @@ for await (const [mode, chunk] of await graph.stream(
 }
 ```
 
-### Use tool progress in React with `useStream`
+#### Use tool progress in React with `useStream`
 
-The `useStream` hook from `@langchain/langgraph-sdk/react` exposes a `toolProgress` array when you include `"tools"` in your stream modes. Each entry is a `ToolProgress` object that tracks the current state of a running tool:
+The [`useStream`](https://reference.langchain.com/javascript/langchain-react/index/useStream) hook from `@langchain/langgraph-sdk/react` exposes a `toolProgress` array when you include `"tools"` in your stream modes. Each entry is a `ToolProgress` object that tracks the current state of a running tool:
 
 | Field | Description |
 |-------|-------------|
@@ -803,7 +659,7 @@ const checkHotels = tool(
 );
 
 export const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-4o-mini" }),
+  model: new ChatOpenAI({ model: "gpt-5.4-mini" }),
   tools: [searchFlights, checkHotels],
   checkpointer: new MemorySaver(),
 });
@@ -865,20 +721,177 @@ function TravelPlanner() {
 ```
 </Accordion>
 
-### `tools` vs `custom` stream mode
+#### `tools` vs `custom` stream mode
 
 Both stream modes can surface tool progress, but they serve different purposes:
 
-* **`tools`** — automatically emits structured lifecycle events (`on_tool_start`, `on_tool_event`, `on_tool_end`, `on_tool_error`) with no code changes needed in your tools beyond using `async function*`. The `useStream` hook provides the reactive `toolProgress` array out of the box.
-* **`custom`** — gives you full control over what data is emitted and when using `config.writer()`. Use this when you need freeform data that doesn't map to the tool lifecycle, or when you want to stream from nodes (not just tools).
+* **`tools`**—automatically emits structured lifecycle events (`on_tool_start`, `on_tool_event`, `on_tool_end`, `on_tool_error`) with no code changes needed in your tools beyond using `async function*`. The `useStream` hook provides the reactive `toolProgress` array out of the box.
+* **`custom`**—gives you full control over what data is emitted and when using `config.writer()`. Use this when you need freeform data that doesn't map to the tool lifecycle, or when you want to stream from nodes (not just tools).
 
 
 
-## Use with any LLM
+### Subgraph outputs
 
 
 
-You can use `streamMode: "custom"` to stream data from **any LLM API** — even if that API does **not** implement the LangChain chat model interface.
+To include outputs from [subgraphs](/oss/javascript/langgraph/use-subgraphs) in the streamed outputs, you can set `subgraphs: true` in the `.stream()` method of the parent graph. This will stream outputs from both the parent graph and any subgraphs.
+
+The outputs will be streamed as tuples `[namespace, data]`, where `namespace` is a tuple with the path to the node where a subgraph is invoked, e.g. `["parent_node:<task_id>", "child_node:<task_id>"]`.
+
+```typescript
+for await (const chunk of await graph.stream(
+  { foo: "foo" },
+  {
+    // Set subgraphs: true to stream outputs from subgraphs
+    subgraphs: true,
+    streamMode: "updates",
+  }
+)) {
+  console.log(chunk);
+}
+```
+
+
+
+
+<Note>
+    This applies to every `streamMode`, including `"messages"`. [`createAgent`](https://reference.langchain.com/javascript/langchain/index/createAgent) returns a `ReactAgent` wrapper; pass `agent.graph` when adding it as a node so the parent treats it as a subgraph. With `subgraphs: true`, message chunks are `[namespace, [token, metadata]]`, so you can tell which subgraph emitted them.
+
+    ```typescript
+    import { createAgent } from "langchain";
+    import { END, START, StateGraph } from "@langchain/langgraph";
+
+    const agent = createAgent({ model, tools, stateSchema: State });
+
+    const graph = new StateGraph(State)
+        .addNode("agent", agent.graph)
+        .addEdge(START, "agent")
+        .addEdge("agent", END)
+        .compile();
+
+    for await (const [ns, data] of await graph.stream(
+        { messages: [{ role: "user", content: "..." }] },
+        {
+            streamMode: "messages",
+            subgraphs: true, // [!code highlight]
+        }
+    )) {
+        const [token, metadata] = data;
+        console.log(ns, token, metadata);
+    }
+    ```
+</Note>
+
+
+<Accordion title="Extended example: streaming from subgraphs">
+
+
+  ```typescript
+  import { StateGraph, StateSchema, START } from "@langchain/langgraph";
+  import { z } from "zod/v4";
+
+  // Define subgraph
+  const SubgraphState = new StateSchema({
+    foo: z.string(), // note that this key is shared with the parent graph state
+    bar: z.string(),
+  });
+
+  const subgraphBuilder = new StateGraph(SubgraphState)
+    .addNode("subgraphNode1", (state) => {
+      return { bar: "bar" };
+    })
+    .addNode("subgraphNode2", (state) => {
+      return { foo: state.foo + state.bar };
+    })
+    .addEdge(START, "subgraphNode1")
+    .addEdge("subgraphNode1", "subgraphNode2");
+  const subgraph = subgraphBuilder.compile();
+
+  // Define parent graph
+  const ParentState = new StateSchema({
+    foo: z.string(),
+  });
+
+  const builder = new StateGraph(ParentState)
+    .addNode("node1", (state) => {
+      return { foo: "hi! " + state.foo };
+    })
+    .addNode("node2", subgraph)
+    .addEdge(START, "node1")
+    .addEdge("node1", "node2");
+  const graph = builder.compile();
+
+  for await (const chunk of await graph.stream(
+    { foo: "foo" },
+    {
+      streamMode: "updates",
+      // Set subgraphs: true to stream outputs from subgraphs
+      subgraphs: true,
+    }
+  )) {
+    console.log(chunk);
+  }
+  ```
+
+
+
+
+  ```
+  [[], {'node1': {'foo': 'hi! foo'}}]
+  [['node2:dfddc4ba-c3c5-6887-5012-a243b5b377c2'], {'subgraphNode1': {'bar': 'bar'}}]
+  [['node2:dfddc4ba-c3c5-6887-5012-a243b5b377c2'], {'subgraphNode2': {'foo': 'hi! foobar'}}]
+  [[], {'node2': {'foo': 'hi! foobar'}}]
+  ```
+
+
+  **Note** that we are receiving not just the node updates, but we also the namespaces which tell us what graph (or subgraph) we are streaming from.
+</Accordion>
+
+
+
+<a id="debug"></a>
+### Debug
+
+Use the `debug` streaming mode to stream as much information as possible throughout the execution of the graph. The streamed outputs include the name of the node as well as the full state.
+
+
+
+```typescript
+for await (const chunk of await graph.stream(
+  { topic: "ice cream" },
+  { streamMode: "debug" }
+)) {
+  console.log(chunk);
+}
+```
+
+
+
+
+### Multiple modes at once
+
+
+
+You can pass an array as the `streamMode` parameter to stream multiple modes at once.
+
+The streamed outputs will be tuples of `[mode, chunk]` where `mode` is the name of the stream mode and `chunk` is the data streamed by that mode.
+
+```typescript
+for await (const [mode, chunk] of await graph.stream(inputs, {
+  streamMode: ["updates", "custom"],
+})) {
+  console.log(chunk);
+}
+```
+
+
+## Advanced
+
+### Use with any LLM
+
+
+
+You can use `streamMode: "custom"` to stream data from **any LLM API**—even if that API does **not** implement the LangChain chat model interface.
 
 This lets you integrate raw LLM clients or external services that provide their own streaming interfaces, making LangGraph highly flexible for custom setups.
 
@@ -925,7 +938,7 @@ for await (const chunk of await graph.stream(
   import OpenAI from "openai";
 
   const openaiClient = new OpenAI();
-  const modelName = "gpt-4.1-mini";
+  const modelName = "gpt-5.4-mini";
 
   async function* streamTokens(modelName: string, messages: any[]) {
     const response = await openaiClient.chat.completions.create({
@@ -1040,7 +1053,7 @@ for await (const chunk of await graph.stream(
 
 </Accordion>
 
-## Disable streaming for specific chat models
+### Disable streaming for specific chat models
 
 If your application mixes models that support streaming with those that do not, you may need to explicitly disable streaming for
 models that do not support it.
@@ -1053,7 +1066,7 @@ Set `streaming: false` when initializing the model.
 import { ChatOpenAI } from "@langchain/openai";
 
 const model = new ChatOpenAI({
-  model: "o1-preview",
+  model: "gpt-6.1-sol",
   // Set streaming: false to disable streaming for the chat model
   streaming: false,
 });
@@ -1069,10 +1082,10 @@ Not all chat model integrations support the `streaming` parameter. If your model
 ---
 
 <div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
 <Callout icon="edit">
     [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langgraph/streaming.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
-</Callout>
-<Callout icon="terminal-2">
-    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
 </Callout>
 </div>

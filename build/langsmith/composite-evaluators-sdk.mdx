@@ -5,7 +5,7 @@ sidebarTitle: Composite evaluators
 
 _Composite evaluators_ are a way to combine multiple evaluator scores into a single [score](/langsmith/evaluation-concepts#evaluator-outputs). This is useful when you want to evaluate multiple aspects of your application and combine the results into a single result.
 
-This guide describes setting up an evaluation that uses multiple evaluators and combines their scores with a custom aggregation function using the [LangSmith SDK](https://reference.langchain.com/python/langsmith/observability/sdk).
+This guide describes setting up an evaluation that uses multiple evaluators and combines their scores with a custom aggregation function using the [LangSmith SDK](https://reference.langchain.com/python/langsmith).
 
 <Note> Requires langsmith>=0.4.29 </Note>
 
@@ -15,7 +15,7 @@ To create composite evaluators in the LangSmith UI, refer to [How to create a co
 
 ## 1. Configure evaluators on a dataset
 
-Start by configuring your evaluators. In this example, the application generates a tweet from a blog introduction and uses three evaluators — summary, tone, and formatting — to assess the output.
+Start by configuring your evaluators. In this example, the application generates a tweet from a blog introduction and uses three evaluators—summary, tone, and formatting—to assess the output.
 
 If you already have your own dataset with evaluators configured, you can skip this step.
 
@@ -42,7 +42,7 @@ oai_client = OpenAI()
 
 examples = [
   {
-    "inputs": {"blog_intro": "Today we're excited to announce the general availability of LangSmith — our purpose-built infrastructure and management layer for deploying and scaling long-running, stateful agents. Since our beta last June, nearly 400 companies have used LangSmith to deploy their agents into production. Agent deployment is the next hard hurdle for shipping reliable agents, and LangSmith dramatically lowers this barrier with: 1-click deployment to go live in minutes, 30 API endpoints for designing custom user experiences that fit any interaction pattern, Horizontal scaling to handle bursty, long-running traffic, A persistence layer to support memory, conversational history, and async collaboration with human-in-the-loop or multi-agent workflows, Native Studio, the agent IDE, for easy debugging, visibility, and iteration "},
+    "inputs": {"blog_intro": "Today we're excited to announce the general availability of LangSmith—our purpose-built infrastructure and management layer for deploying and scaling long-running, stateful agents. Since our beta last June, nearly 400 companies have used LangSmith to deploy their agents into production. Agent deployment is the next hard hurdle for shipping reliable agents, and LangSmith dramatically lowers this barrier with: 1-click deployment to go live in minutes, 30 API endpoints for designing custom user experiences that fit any interaction pattern, Horizontal scaling to handle bursty, long-running traffic, A persistence layer to support memory, conversational history, and async collaboration with human-in-the-loop or multi-agent workflows, Native Studio, the agent IDE, for easy debugging, visibility, and iteration "},
   },
   {
     "inputs": {"blog_intro": "Klarna has reshaped global commerce with its consumer-centric, AI-powered payment and shopping solutions. With over 85 million active users and 2.5 million daily transactions on its platform, Klarna is a fintech leader that simplifies shopping while empowering consumers with smarter, more flexible financial solutions. Klarna's flagship AI Assistant is revolutionizing the shopping and payments experience. Built on LangGraph and powered by LangSmith, the AI Assistant handles tasks ranging from customer payments, to refunds, to other payment escalations. With 2.5 million conversations to date, the AI Assistant is more than just a chatbot; it's a transformative agent that performs the work equivalent of 700 full-time staff, delivering results quickly and improving company efficiency."},
@@ -66,7 +66,7 @@ def generate_tweet(inputs: dict) -> dict:
         {"role": "user", "content": inputs["blog_intro"]},
     ]
     result = oai_client.responses.create(
-        input=messages, model="gpt-5-nano"
+        input=messages, model="gpt-5.4-mini"
     )
     return {"tweet": result.output_text}
 
@@ -80,7 +80,7 @@ def summary(inputs: dict, outputs: dict) -> bool:
 
     msg = f"Question: {inputs['blog_intro']}\nAnswer: {outputs['tweet']}"
     response = oai_client.responses.parse(
-        model="gpt-5-nano",
+        model="gpt-5.4-mini",
         input=[{"role": "system", "content": instructions,}, {"role": "user", "content": msg}],
         text_format=Response
     )
@@ -97,7 +97,7 @@ def formatting(inputs: dict, outputs: dict) -> bool:
 
     msg = f"{outputs['tweet']}"
     response = oai_client.responses.parse(
-        model="gpt-5-nano",
+        model="gpt-5.4-mini",
         input=[{"role": "system", "content": instructions,}, {"role": "user", "content": msg}],
         text_format=Response
     )
@@ -114,7 +114,7 @@ def tone(inputs: dict, outputs: dict) -> bool:
 
     msg = f"{outputs['tweet']}"
     response = oai_client.responses.parse(
-        model="gpt-5-nano",
+        model="gpt-5.4-mini",
         input=[{"role": "system", "content": instructions,}, {"role": "user", "content": msg}],
         text_format=Response
     )
@@ -126,10 +126,10 @@ results = client.evaluate(
     generate_tweet,
     data=dataset.name,
     evaluators=[summary, tone, formatting],
-    experiment_prefix="gpt-5-nano",
+    experiment_prefix="gpt-5.4-mini",
 )
 
-# Get the experiment name to be used in client.get_experiment_results() in the next section
+# Get the experiment name to be used in the next section
 experiment_name = results.experiment_name
 ```
 
@@ -138,8 +138,10 @@ experiment_name = results.experiment_name
 Create composite feedback that aggregates the individual evaluator scores using your custom function. This example uses a weighted average of the individual evaluator scores.
 
 ```python
-from typing import Dict
+import asyncio
 import math
+from typing import Dict
+
 from langsmith import Client
 from dotenv import load_dotenv
 
@@ -156,11 +158,6 @@ DEFAULT_WEIGHTS: Dict[str, float] = {
 }
 WEIGHTED_FEEDBACK_NAME = "weighted_summary"
 
-# Pull experiment results
-client = Client()
-results = client.get_experiment_results(
-    name=YOUR_EXPERIMENT_NAME,
-)
 
 # Calculate weighted score for each run
 def calculate_weighted_score(feedback_stats: dict) -> float:
@@ -178,34 +175,48 @@ def calculate_weighted_score(feedback_stats: dict) -> float:
     total_score = 0.0
     for metric, weight in DEFAULT_WEIGHTS.items():
         metric_data = feedback_stats[metric]
-        if metric_data.get("n", 0) > 0 and "avg" in metric_data:
-            total_score += metric_data["avg"] * weight
+        if (metric_data.n or 0) > 0 and metric_data.avg is not None:
+            total_score += metric_data.avg * weight
         else:
             return float("nan")
 
     return total_score
 
-# Process each run and write feedback
-# Note that experiment results need to finish processing before this should be called.
-for example_with_runs in results["examples_with_runs"]:
-    for run in example_with_runs.runs:
+
+async def main():
+    client = Client()
+    # The experiment is a tracing project; its root runs carry the evaluator scores
+    experiment = client.read_project(project_name=YOUR_EXPERIMENT_NAME)
+
+    # Process each run and write feedback
+    # Note that experiment results need to finish processing before this should be called.
+    async for run in client.runs.query(
+        project_ids=[str(experiment.id)],
+        min_start_time=experiment.start_time,
+        is_root=True,
+        selects=["ID", "FEEDBACK_STATS"],
+    ):
         if run.feedback_stats:
             score = calculate_weighted_score(run.feedback_stats)
             if not math.isnan(score):
                 client.create_feedback(
                     run_id=run.id,
                     key=WEIGHTED_FEEDBACK_NAME,
-                    score=float(score)
+                    score=float(score),
+                    session_id=experiment.id,
                 )
+
+
+asyncio.run(main())
 ```
 
 ---
 
 <div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
 <Callout icon="edit">
     [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/composite-evaluators-sdk.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
-</Callout>
-<Callout icon="terminal-2">
-    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
 </Callout>
 </div>

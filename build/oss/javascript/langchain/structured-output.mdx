@@ -14,6 +14,7 @@ LangChain's prebuilt ReAct agent `createAgent` handles structured output automat
 ```ts
 type ResponseFormat = (
     | ZodSchema<StructuredResponseT> // a Zod schema
+    | StandardSchema<StructuredResponseT> // any Standard Schema library
     | Record<string, unknown> // a JSON Schema
 )
 
@@ -25,7 +26,7 @@ const agent = createAgent({
 
 ## Response format
 
-Controls how the agent returns structured data. You can provide either a Zod object or JSON schema. By default, the agent uses a tool calling strategy, in which the output is created by an additional tool call. Certain models support native structured output, in which case the agent will use that strategy instead.
+Controls how the agent returns structured data. You can provide a Zod schema, any [Standard Schema](https://standardschema.dev/)-compatible schema, or a JSON Schema object. By default, the agent uses a tool calling strategy, in which the output is created by an additional tool call. Certain models support native structured output, in which case the agent will use that strategy instead.
 
 You can control the behavior by wrapping `ResponseFormat` in a `toolStrategy` or `providerStrategy` function call:
 
@@ -64,13 +65,14 @@ To use this strategy, configure a `ProviderStrategy`:
 
 ```ts
 function providerStrategy<StructuredResponseT>(
-    schema: ZodSchema<StructuredResponseT> | JsonSchemaFormat
+    schema: ZodSchema<StructuredResponseT> | SerializableSchema | JsonSchemaFormat
 ): ProviderStrategy<StructuredResponseT>
 ```
 
 <ParamField path="schema" required>
     The schema defining the structured output format. Supports:
     - **Zod Schema**: A zod schema
+    - **Standard Schema**: Any schema implementing the [Standard Schema](https://standardschema.dev/) spec
     - **JSON Schema**: A JSON schema object
 </ParamField>
 
@@ -88,7 +90,34 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
     });
 
     const agent = createAgent({
-        model: "gpt-5",
+        model: "gpt-6.1-sol",
+        tools: [],
+        responseFormat: providerStrategy(ContactInfo)
+    });
+
+    const result = await agent.invoke({
+        messages: [{"role": "user", "content": "Extract contact info from: John Doe, john@example.com, (555) 123-4567"}]
+    });
+
+    console.log(result.structuredResponse);
+    // { name: "John Doe", email: "john@example.com", phone: "(555) 123-4567" }
+    ```
+
+    ```ts Standard Schema
+    import * as v from "valibot";
+    import { toStandardJsonSchema } from "@valibot/to-json-schema";
+    import { createAgent, providerStrategy } from "langchain";
+
+    const ContactInfo = toStandardJsonSchema(
+        v.object({
+            name: v.pipe(v.string(), v.description("The name of the person")),
+            email: v.pipe(v.string(), v.description("The email address of the person")),
+            phone: v.pipe(v.string(), v.description("The phone number of the person")),
+        })
+    );
+
+    const agent = createAgent({
+        model: "gpt-6.1-sol",
         tools: [],
         responseFormat: providerStrategy(ContactInfo)
     });
@@ -116,7 +145,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
     }
 
     const agent = createAgent({
-        model: "gpt-5",
+        model: "gpt-6.1-sol",
         tools: [],
         responseFormat: providerStrategy(contactInfoSchema)
     });
@@ -153,7 +182,8 @@ function toolStrategy<StructuredResponseT>(
     responseFormat:
         | JsonSchemaFormat
         | ZodSchema<StructuredResponseT>
-        | (ZodSchema<StructuredResponseT> | JsonSchemaFormat)[]
+        | SerializableSchema
+        | (ZodSchema<StructuredResponseT> | SerializableSchema | JsonSchemaFormat)[]
     options?: ToolStrategyOptions
 ): ToolStrategy<StructuredResponseT>
 ```
@@ -161,6 +191,7 @@ function toolStrategy<StructuredResponseT>(
 <ParamField path="schema" required>
     The schema defining the structured output format. Supports:
     - **Zod Schema**: A zod schema
+    - **Standard Schema**: Any schema implementing the [Standard Schema](https://standardschema.dev/) spec
     - **JSON Schema**: A JSON schema object
 </ParamField>
 
@@ -189,13 +220,40 @@ function toolStrategy<StructuredResponseT>(
     });
 
     const agent = createAgent({
-        model: "gpt-5",
+        model: "gpt-6.1-sol",
         tools: [],
         responseFormat: toolStrategy(ProductReview)
     })
 
     const result = await agent.invoke({
         "messages": [{"role": "user", "content": "Analyze this review: 'Great product: 5 out of 5 stars. Fast shipping, but expensive'"}]
+    })
+
+    console.log(result.structuredResponse);
+    // { "rating": 5, "sentiment": "positive", "keyPoints": ["fast shipping", "expensive"] }
+    ```
+
+    ```ts Standard Schema
+    import * as v from "valibot";
+    import { toStandardJsonSchema } from "@valibot/to-json-schema";
+    import { createAgent, toolStrategy } from "langchain";
+
+    const ProductReview = toStandardJsonSchema(
+        v.object({
+            rating: v.optional(v.pipe(v.number(), v.minValue(1), v.maxValue(5))),
+            sentiment: v.picklist(["positive", "negative"]),
+            keyPoints: v.pipe(v.array(v.string()), v.description("The key points of the review. Lowercase, 1-3 words each.")),
+        })
+    );
+
+    const agent = createAgent({
+        model: "gpt-6.1-sol",
+        tools: [],
+        responseFormat: toolStrategy(ProductReview)
+    })
+
+    const result = await agent.invoke({
+        messages: [{"role": "user", "content": "Analyze this review: 'Great product: 5 out of 5 stars. Fast shipping, but expensive'"}]
     })
 
     console.log(result.structuredResponse);
@@ -230,7 +288,7 @@ function toolStrategy<StructuredResponseT>(
     }
 
     const agent = createAgent({
-        model: "gpt-5",
+        model: "gpt-6.1-sol",
         tools: [],
         responseFormat: toolStrategy(productReviewSchema)
     });
@@ -260,7 +318,7 @@ function toolStrategy<StructuredResponseT>(
     });
 
     const agent = createAgent({
-        model: "gpt-5",
+        model: "gpt-6.1-sol",
         tools: [],
         responseFormat: toolStrategy([ProductReview, CustomerComplaint])
     });
@@ -289,7 +347,7 @@ const MeetingAction = z.object({
 });
 
 const agent = createAgent({
-    model: "gpt-5",
+    model: "gpt-6.1-sol",
     tools: [],
     responseFormat: toolStrategy(MeetingAction, {
         toolMessageContent: "Action item captured and added to meeting notes!"
@@ -353,7 +411,7 @@ const EventDetails = z.object({
 });
 
 const agent = createAgent({
-    model: "gpt-5",
+    model: "gpt-6.1-sol",
     tools: [],
     responseFormat: toolStrategy([ContactInfo, EventDetails]),
 });
@@ -401,7 +459,7 @@ const ProductRating = z.object({
 });
 
 const agent = createAgent({
-    model: "gpt-5",
+    model: "gpt-6.1-sol",
     tools: [],
     responseFormat: toolStrategy(ProductRating),
 });
@@ -488,13 +546,82 @@ const responseFormat = toolStrategy(ProductRating, {
 )
 ```
 
+
+
+
+#### Model refusal
+
+When the model refuses, it returns no structured output. With `providerStrategy`, the agent throws `StructuredOutputParsingError`. With `toolStrategy`, the agent ends without a `structuredResponse`. To throw [`ModelRefusalError`](https://reference.langchain.com/javascript/langchain-core/errors/ModelRefusalError) for either strategy, add [`modelRefusalMiddleware`](https://reference.langchain.com/javascript/langchain/index/modelRefusalMiddleware):
+
+```typescript
+import { createAgent, modelRefusalMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "claude-sonnet-5-5",
+  responseFormat: ProductRating,
+  middleware: [modelRefusalMiddleware()],
+});
+```
+
+`modelRefusalMiddleware` requires `langchain>=1.6.4`. See [Handle a refusal](/oss/javascript/langchain/middleware/built-in#handle-a-refusal) for ways to respond.
+
+
+## Handle parsing errors in chains
+
+
+The strategies above, including `handleError` retries, apply to agents created with `createAgent`. Chains composed with `.pipe()` (for example, `prompt.pipe(model).pipe(parser)`) have no built-in retry mechanism for output parsing failures. To handle malformed model output in a chain, use one of the following approaches:
+
+- **Model-level structured output**: Bind the schema to the model with [`withStructuredOutput`](https://reference.langchain.com/javascript/langchain-core/language_models/chat_models/BaseChatModel/withStructuredOutput). When the provider supports native structured output, it enforces the schema and avoids most parsing failures. See [Models - Structured output](/oss/javascript/langchain/models#structured-output). Use this approach when the model supports it.
+- **Fix malformed output with a model**: Wrap the output parser in an `OutputFixingParser` from [`@langchain/classic`](https://www.npmjs.com/package/@langchain/classic). On a parsing failure, the wrapper sends the malformed output, the parser's format instructions, and the error message to a model and parses the corrected response.
+
+<Note>
+    `OutputFixingParser` requires the `@langchain/classic` package. Before v1, it was available from `langchain/output_parsers`.
+</Note>
+
+```ts
+import { OutputFixingParser } from "@langchain/classic/output_parsers";
+import { StructuredOutputParser } from "@langchain/core/output_parsers";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { initChatModel } from "langchain";
+import * as z from "zod";
+
+const ProductReview = z.object({
+    rating: z.number().min(1).max(5).describe("The rating of the product (1-5)"),
+    sentiment: z.enum(["positive", "negative"]).describe("The sentiment of the review"),
+});
+
+const model = await initChatModel("gpt-5.4");
+
+const baseParser = StructuredOutputParser.fromZodSchema(ProductReview);
+const fixingParser = OutputFixingParser.fromLLM(model, baseParser);
+
+const prompt = ChatPromptTemplate.fromMessages([
+    ["system", "Analyze the product review.\n{format_instructions}"],
+    ["user", "{review}"],
+]);
+
+const chain = prompt.pipe(model).pipe(fixingParser);
+
+const result = await chain.invoke({
+    review: "Great product, 5 stars! Fast shipping, but expensive.",
+    format_instructions: baseParser.getFormatInstructions(),
+});
+// { rating: 5, sentiment: "positive" }
+```
+
+The wrapped parser only invokes the fixing model when the initial parse fails, so well-formed output incurs no extra model calls.
+
+<Warning>
+    `OutputFixingParser` retries only errors thrown as `OutputParserException`. Parsers that throw raw errors are not retried: for example, `JsonOutputParser` throws a plain `SyntaxError` on invalid JSON, which propagates uncaught. Wrap a parser that throws `OutputParserException`, such as `StructuredOutputParser`.
+</Warning>
+
 ---
 
 <div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
 <Callout icon="edit">
     [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/structured-output.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
-</Callout>
-<Callout icon="terminal-2">
-    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
 </Callout>
 </div>
