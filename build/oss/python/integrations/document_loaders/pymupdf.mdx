@@ -1,0 +1,255 @@
+---
+title: PyMuPDF integration
+description: Integrate with the PyMuPDF document loader using LangChain Python.
+integration:
+  name: PyMuPDF
+  pypi: langchain-pymupdf-layout
+---
+
+[PyMuPDF](https://pymupdf.io) is a layout-aware document engine for AI and a feature-rich
+Python toolkit for extracting, rendering and editing PDFs and other documents.
+
+This integration provides PyMuPDF with PyMuPDF Layout's capabilities via the
+`PyMuPDFLayoutLoader` document loader.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | Serializable | JS support |
+| :--- | :--- | :---: | :---: |  :---: |
+| langchain_pymupdf_layout | langchain-pymupdf-layout | ✅ | ❌ | ❌ |
+
+### Loader features
+
+| Source | Document Lazy Loading | Native Async Support |
+| :---: | :---: | :---: |
+| `PyMuPDFLayoutLoader` | ✅ | ❌ |
+
+`PyMuPDFLayoutLoader` uses PyMuPDF Layout's ML-based layout analysis to turn PDFs into
+high-quality Markdown and structured JSON for RAG and agents, running fast on CPU and
+grounding every result to its source page.
+
+## Setup
+
+```bash
+pip install -qU langchain-pymupdf-layout
+```
+
+## Initialization
+
+Initialize as follows:
+
+```python
+from langchain_pymupdf_layout import PyMuPDFLayoutLoader
+
+file_path = "https://arxiv.org/pdf/2607.11276"
+loader = PyMuPDFLayoutLoader(file_path)
+```
+
+## Load
+
+```python
+documents = loader.load()
+document = documents[0]
+
+m = document.metadata
+print(f"Total pages: {m['total_pages']}")
+print(
+    f"  page {m['page']} {m['category']:<15}"
+    f" ({m['x0']:.0f}, {m['y0']:.0f}, {m['x1']:.0f}, {m['y1']:.0f})"
+    f"  {document.page_content[:60]!r}"
+)
+```
+
+```output
+Total pages: 7
+  page 0 section-header  (71, 66, 488, 104)  'Automated Textbook Auditing with Multi-Agent LLM Systems'
+```
+
+## Lazy load
+
+Use `lazy_load()` to defer parsing until you iterate over the results.
+
+```python
+
+for doc in loader.lazy_load():
+    pass # work on each document as it is loaded
+
+```
+
+## Usage
+
+By default (`mode="json"`) it uses the layout analysis to return many small LangChain documents: one per element, or one per section. Each document records where its content is in the PDF, so you can:
+
+- show or highlight the exact source of an answer
+- filter by element type, for example index only body text and tables
+- keep tables whole, as Markdown tables, rather than letting a text splitter cut through them
+
+Use `layout_chunking` to choose how the content is grouped.
+
+If you'd rather have one document containing the whole PDF as Markdown, use `mode="markdown"`.
+
+### One document per layout element
+
+`layout_chunking="box"` (the default) returns one document per heading, paragraph, list item, table, caption and so on. Pictures that contain no text are skipped.
+
+```python
+from langchain_pymupdf_layout import PyMuPDFLayoutLoader
+
+loader = PyMuPDFLayoutLoader(
+    file_path="https://arxiv.org/pdf/2607.11276",
+    layout_chunking="box",
+)
+
+for document in loader.lazy_load():
+    m = document.metadata
+    print(m["page"], m["category"], (m["x0"], m["y0"], m["x1"], m["y1"]))
+    print(document.page_content)
+```
+
+```output
+0 section-header (71.4, 65.52, 488.18, 103.54)
+Automated Textbook Auditing with Multi-Agent LLM Systems
+...
+```
+
+Each document's metadata includes:
+
+| Key | Description |
+| --- | --- |
+| `page` | Page number, starting from 0 |
+| `category` | The element type: `title`, `section-header`, `text`, `list-item`, `table`, `picture`, `caption`, `formula`, `footnote`, `page-header` or `page-footer` |
+| `header_level` | The heading level for headings, otherwise `0` |
+| `x0`, `y0`, `x1`, `y1` | The element's position on the page, in PDF points, with the origin at the top-left corner |
+| `page_width`, `page_height` | The page size, in PDF points |
+
+<Note>
+Rich [grounding information](https://pymupdf.io/grounding) is available for each section, including the exact position of every element within the section.
+</Note>
+
+### One document per section
+
+`layout_chunking="section"` returns one document per section: each heading together with everything under it, up to the next heading. The content is written as Markdown. This usually gives better chunks for retrieval than single elements, which can be very small (a heading on its own, for example).
+
+```python
+import json
+from itertools import islice
+
+loader = PyMuPDFLayoutLoader(
+    file_path="https://arxiv.org/pdf/2607.11276",
+    layout_chunking="section",
+)
+
+for document in islice(loader.lazy_load(), 3):
+    m = document.metadata
+    print(f"{m['heading']} (header level:{m['header_level']}) (pages {m['page']}-{m['page_end']})")
+
+    # The position of every element in the section
+    for region in json.loads(m["regions"]):
+        print("   ", region["page"], region["category"], region["bbox"])
+```
+
+```output
+Automated Textbook Auditing with Multi-Agent LLM Systems (header level:1) (pages 0-0)
+    0 section-header [71.4, 65.52, 488.18, 103.54]
+    0 text [72.0, 116.16, 522.78, 128.2]
+    0 text [72.0, 140.82, 232.99, 150.41]
+    0 text [72.0, 153.77, 289.86, 163.32]
+Abstract (header level:4) (pages 0-0)
+    0 section-header [116.75, 183.7, 158.45, 191.43]
+    0 text [116.91, 196.01, 524.26, 357.79]
+1. Introduction (header level:2) (pages 0-0)
+    0 section-header [72.0, 400.0, 172.65, 410.3]
+    0 text [72.0, 426.76, 523.28, 491.17]
+    0 text [72.0, 494.5, 523.49, 599.51]
+    0 text [72.0, 602.66, 523.28, 667.3]
+    0 text [72.5, 715.97, 416.49, 724.37]
+    0 footnote [72.23, 725.52, 520.16, 746.46]
+    0 text [72.5, 747.58, 470.37, 757.14]
+    0 footnote [114.75, 762.41, 450.52, 768.07]
+```
+
+Each document's metadata includes:
+
+| Key | Description |
+| --- | --- |
+| `page`, `page_end` | The first and last page of the section, starting from 0 |
+| `category` | Always `section` |
+| `heading` | The section's heading text. Empty for any content before the first heading |
+| `header_level` | The level of the section's heading |
+| `regions` | A JSON string listing the `page`, `category` and `bbox` (`[x0, y0, x1, y1]`) of every element in the section |
+
+`regions` is stored as a JSON string, rather than a list, because some vector stores only accept plain text and number values in metadata.
+
+### One Markdown document
+
+With `mode="markdown"` the loader returns one document per PDF, containing the whole PDF as Markdown.
+You can then split it into chunks yourself.
+
+The example below uses `RecursiveCharacterTextSplitter` to chunk the document. The text splitters are a separate package, so install them first, either with the `examples` extra:
+
+```bash
+pip install -U "langchain-pymupdf-layout[examples]"
+```
+
+or directly:
+
+```bash
+pip install -U langchain-text-splitters
+```
+
+```python
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_pymupdf_layout import PyMuPDFLayoutLoader
+
+loader = PyMuPDFLayoutLoader(
+    file_path="https://arxiv.org/pdf/2607.11276",
+    mode="markdown",
+)
+
+documents = loader.load()
+
+# print the first 100 characters of the Markdown content
+print(documents[0].page_content[:100])
+
+# Chunk
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=200
+)
+
+chunks = text_splitter.split_documents(documents)
+
+print(f"Loaded {len(documents)} document(s)")
+print(f"Created {len(chunks)} chunk(s)")
+```
+
+```output
+# **Automated Textbook Auditing with Multi-Agent LLM Systems**
+
+Ciprian Cristescu<sup>_1_</sup> , A
+
+Loaded 1 document(s)
+
+Created 33 chunk(s)
+```
+
+---
+
+## API reference
+
+- [PyMuPDF Documentation](https://pymupdf.readthedocs.io)
+- [PyMuPDF Github](https://github.com/pymupdf/PyMuPDF)
+- [PyMuPDF Cookbook](https://pymupdf.io/cookbook)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/document_loaders/pymupdf.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
